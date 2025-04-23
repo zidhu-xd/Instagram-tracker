@@ -1,0 +1,45 @@
+name: Instagram Tracker with Telegram
+on:
+  schedule:
+    - cron: "0 * * * *"  # Runs at minute 0 of every hour (UTC)
+  workflow_dispatch:     # Allows manual triggering
+
+jobs:
+  track-and-notify:
+    runs-on: ubuntu-latest
+    steps:
+      # Step 1: Checkout code
+      - uses: actions/checkout@v4
+
+      # Step 2: Set up Python
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      # Step 3: Install dependencies
+      - name: Install packages
+        run: |
+          pip install instagrapi python-telegram-bot
+          pip freeze > requirements.txt
+
+      # Step 4: Run the tracker
+      - name: Execute tracker and send Telegram alert
+        env:
+          # Instagram credentials
+          INSTA_USERNAME: ${{ secrets.INSTA_USERNAME }}
+          INSTA_PASSWORD: ${{ secrets.INSTA_PASSWORD }}
+          TARGET_USERNAME: ${{ secrets.TARGET_USERNAME }}
+          
+          # Telegram credentials
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python tracker.py
+
+      # (Optional) Step 5: Upload logs as artifact
+      - name: Upload log file
+        if: always()  # Upload even if job fails
+        uses: actions/upload-artifact@v3
+        with:
+          name: tracker-logs
+          path: tracker.log
