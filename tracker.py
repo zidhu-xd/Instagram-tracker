@@ -7,12 +7,12 @@ from instagrapi import Client
 from telegram.ext import Application
 import asyncio
 
-# Load secrets
-INSTA_USERNAME = os.getenv('INSTA_USERNAME')
-INSTA_PASSWORD = os.getenv('INSTA_PASSWORD')
-TARGET_USERNAME = os.getenv('TARGET_USERNAME')
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+# Hardcoded credentials (replace with actual values)
+INSTA_USERNAME = "titanabhi9"
+INSTA_PASSWORD = "titanabhi123"
+TARGET_USERNAME = "__.gou_ryy.__0_0"
+TELEGRAM_TOKEN = "7813940268:AAHTnEJq9dBObZPxZ7K4qR18QgdQxbyfgl4"
+TELEGRAM_CHAT_ID = "8110106197"
 
 # Configure logging
 logging.basicConfig(
@@ -32,9 +32,9 @@ async def send_telegram_message(message):
         logging.error(f"Telegram send failed: {e}")
 
 async def track_instagram_account():
-    # Validate environment variables
+    # Validate credentials
     if not all([INSTA_USERNAME, INSTA_PASSWORD, TARGET_USERNAME, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]):
-        error_msg = "Missing required environment variables. Please set INSTA_USERNAME, INSTA_PASSWORD, TARGET_USERNAME, TELEGRAM_TOKEN, and TELEGRAM_CHAT_ID."
+        error_msg = "Missing required credentials. Please set INSTA_USERNAME, INSTA_PASSWORD, TARGET_USERNAME, TELEGRAM_TOKEN, and TELEGRAM_CHAT_ID."
         logging.error(error_msg)
         await send_telegram_message(f"❌ Error: {error_msg}")
         return
