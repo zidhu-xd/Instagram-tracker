@@ -4,8 +4,8 @@ import json
 import logging
 from datetime import datetime
 from instagrapi import Client
-from telegram import Bot
-from telegram.error import TelegramError
+from telegram.ext import Application
+import asyncio
 
 # Load secrets
 INSTA_USERNAME = os.getenv('INSTA_USERNAME')
@@ -21,42 +21,61 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 
-def send_telegram_message(message):
+async def send_telegram_message(message):
     try:
-        bot = Bot(token=TELEGRAM_TOKEN)
-        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
-    except TelegramError as e:
+        # Initialize the Application for python-telegram-bot v22.0
+        app = Application.builder().token(TELEGRAM_TOKEN).build()
+        await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+        # Properly shut down the application to avoid hanging
+        await app.shutdown()
+    except Exception as e:
         logging.error(f"Telegram send failed: {e}")
 
-def track_instagram_account():
+async def track_instagram_account():
+    # Validate environment variables
+    if not all([INSTA_USERNAME, INSTA_PASSWORD, TARGET_USERNAME, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]):
+        error_msg = "Missing required environment variables. Please set INSTA_USERNAME, INSTA_PASSWORD, TARGET_USERNAME, TELEGRAM_TOKEN, and TELEGRAM_CHAT_ID."
+        logging.error(error_msg)
+        await send_telegram_message(f"❌ Error: {error_msg}")
+        return
+
     cl = Client()
     try:
-        # Instagram login
+        # Instagram login with delay to avoid rate limits
+        logging.info("Logging into Instagram...")
         cl.login(INSTA_USERNAME, INSTA_PASSWORD)
-        
+        time.sleep(5)  # Delay to avoid rate limiting
+
         # Get target user data
+        logging.info(f"Fetching data for @{TARGET_USERNAME}...")
         user_id = cl.user_id_from_username(TARGET_USERNAME)
         user_info = cl.user_info(user_id)
-        
-        # Prepare message
+
+        # Check if user_info is None or missing attributes
+        if user_info is None:
+            raise ValueError("User info could not be retrieved from Instagram")
+
+        # Prepare message with safe attribute access
+        bio = getattr(user_info, 'biography', 'N/A')[:100] if getattr(user_info, 'biography', None) else 'N/A'
         message = f"""
 📊 Instagram Tracking Report ({datetime.now().strftime('%Y-%m-%d %H:%M')})
-        
+
 🔍 Account: @{TARGET_USERNAME}
-👤 Name: {user_info.full_name}
-📝 Bio: {user_info.biography[:100]}...
-        
+👤 Name: {getattr(user_info, 'full_name', 'N/A')}
+📝 Bio: {bio}...
+
 📈 Stats:
-• Followers: {user_info.follower_count}
-• Following: {user_info.following_count}
-• Posts: {user_info.media_count}
+• Followers: {getattr(user_info, 'follower_count', 0)}
+• Following: {getattr(user_info, 'following_count', 0)}
+• Posts: {getattr(user_info, 'media_count', 0)}
         """
-        
-        send_telegram_message(message)
-        
+
+        await send_telegram_message(message)
+
     except Exception as e:
         logging.error(f"Tracking failed: {e}")
-        send_telegram_message(f"❌ Error tracking @{TARGET_USERNAME}: {str(e)}")
+        await send_telegram_message(f"❌ Error tracking @{TARGET_USERNAME}: {str(e)}")
 
 if __name__ == "__main__":
-    track_instagram_account()
+    # Run the async function
+    asyncio.run(track_instagram_account())
