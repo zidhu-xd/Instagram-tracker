@@ -1,3 +1,7 @@
+from flask_cors import CORS
+
+app = Flask(__name__)
+CORS(app)
 # app.py
 from flask import Flask, request
 import pandas as pd
