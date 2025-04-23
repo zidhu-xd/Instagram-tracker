@@ -1,54 +1,84 @@
 import os
 import time
+import json
 from datetime import datetime
 from instagrapi import Client
-from instagrapi.exceptions import LoginRequired
-import json
+from instagrapi.exceptions import LoginRequired, ChallengeRequired
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('tracker.log'),
+        logging.StreamHandler()
+    ]
+)
+
+# Load environment variables from GitHub Secrets
+INSTA_USERNAME = os.getenv('INSTA_USERNAME')
+INSTA_PASSWORD = os.getenv('INSTA_PASSWORD')
+TARGET_USERNAME = os.getenv('TARGET_USERNAME')
 
 # Configuration
 CONFIG = {
-    'my_username': 'titanabhi9',
-    'my_password': 'titanabhi123',
-    'target_username': '__.gou_ryy.__0_0',
-    'check_interval': 3600,  # Check every hour (in seconds)
-    'log_file': 'instagram_tracker.log',
-    'data_file': 'instagram_data.json'
+    'data_file': 'data.json',
+    'check_interval': 60,  # Seconds between checks (for testing)
+    'max_retries': 3
 }
 
 def load_previous_data():
-    if os.path.exists(CONFIG['data_file']):
-        with open(CONFIG['data_file'], 'r') as f:
-            return json.load(f)
+    try:
+        if os.path.exists(CONFIG['data_file']):
+            with open(CONFIG['data_file'], 'r') as f:
+                return json.load(f)
+    except Exception as e:
+        logging.error(f"Error loading previous data: {e}")
     return None
 
 def save_current_data(data):
-    with open(CONFIG['data_file'], 'w') as f:
-        json.dump(data, f, indent=2)
-
-def log_message(message):
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    log_entry = f"[{timestamp}] {message}\n"
-    print(log_entry, end='')
-    with open(CONFIG['log_file'], 'a') as f:
-        f.write(log_entry)
+    try:
+        with open(CONFIG['data_file'], 'w') as f:
+            json.dump(data, f, indent=2)
+        logging.info("Data saved successfully")
+    except Exception as e:
+        logging.error(f"Error saving data: {e}")
 
 def initialize_client():
     cl = Client()
+    cl.delay_range = [2, 5]  # More human-like behavior
+    
+    # Load session if exists to avoid frequent logins
+    session_file = 'session.json'
     try:
-        cl.login(CONFIG['my_username'], CONFIG['my_password'])
-        log_message("Successfully logged in to Instagram")
-        return cl
+        if os.path.exists(session_file):
+            cl.load_settings(session_file)
     except Exception as e:
-        log_message(f"Login failed: {str(e)}")
-        return None
+        logging.warning(f"Couldn't load session: {e}")
+
+    for attempt in range(CONFIG['max_retries']):
+        try:
+            cl.login(INSTA_USERNAME, INSTA_PASSWORD)
+            cl.dump_settings(session_file)
+            logging.info("Login successful")
+            return cl
+        except ChallengeRequired:
+            logging.error("Challenge required! Check your Instagram for verification")
+            break
+        except LoginRequired as e:
+            logging.warning(f"Login failed (attempt {attempt + 1}): {e}")
+            time.sleep(10)
+    return None
 
 def get_user_data(cl, username):
     try:
         user_id = cl.user_id_from_username(username)
         user_info = cl.user_info(user_id)
         
-        followers = cl.user_followers(user_id).keys()
-        following = cl.user_following(user_id).keys()
+        # Get limited follower/following data to avoid rate limits
+        followers = list(cl.user_followers(user_id, amount=20).keys())
+        following = list(cl.user_following(user_id, amount=20).keys())
         
         return {
             'timestamp': datetime.now().isoformat(),
@@ -59,105 +89,51 @@ def get_user_data(cl, username):
             'follower_count': user_info.follower_count,
             'following_count': user_info.following_count,
             'media_count': user_info.media_count,
-            'followers': list(followers),
-            'following': list(following),
+            'recent_followers': followers,
+            'recent_following': following,
             'is_private': user_info.is_private,
             'profile_pic_url': user_info.profile_pic_url
         }
     except Exception as e:
-        log_message(f"Error getting user data: {str(e)}")
+        logging.error(f"Error getting user data: {e}")
         return None
 
 def compare_data(old_data, new_data):
     changes = []
-    
     if not old_data:
-        changes.append("Initial data collection")
-        return changes
+        return ["Initial data collection"]
     
-    # Compare basic info
-    if old_data['full_name'] != new_data['full_name']:
-        changes.append(f"Name changed from '{old_data['full_name']}' to '{new_data['full_name']}'")
-    
-    if old_data['biography'] != new_data['biography']:
-        changes.append("Bio has changed")
-    
-    # Compare counts
-    if old_data['follower_count'] != new_data['follower_count']:
-        diff = new_data['follower_count'] - old_data['follower_count']
-        changes.append(f"Follower count changed by {diff} (now {new_data['follower_count']})")
-    
-    if old_data['following_count'] != new_data['following_count']:
-        diff = new_data['following_count'] - old_data['following_count']
-        changes.append(f"Following count changed by {diff} (now {new_data['following_count']})")
-    
-    if old_data['media_count'] != new_data['media_count']:
-        diff = new_data['media_count'] - old_data['media_count']
-        changes.append(f"Post count changed by {diff} (now {new_data['media_count']})")
-    
-    # Compare followers list
-    old_followers = set(old_data['followers'])
-    new_followers = set(new_data['followers'])
-    
-    lost_followers = old_followers - new_followers
-    gained_followers = new_followers - old_followers
-    
-    if lost_followers:
-        changes.append(f"Lost {len(lost_followers)} followers")
-    
-    if gained_followers:
-        changes.append(f"Gained {len(gained_followers)} new followers")
-    
-    # Compare following list
-    old_following = set(old_data['following'])
-    new_following = set(new_data['following'])
-    
-    unfollowed = old_following - new_following
-    new_following_added = new_following - old_following
-    
-    if unfollowed:
-        changes.append(f"Unfollowed {len(unfollowed)} accounts")
-    
-    if new_following_added:
-        changes.append(f"Started following {len(new_following_added)} new accounts")
+    # Simple comparison to avoid GitHub Actions timeouts
+    for field in ['full_name', 'biography', 'follower_count', 'following_count', 'media_count']:
+        if old_data.get(field) != new_data.get(field):
+            changes.append(f"{field} changed from {old_data.get(field)} to {new_data.get(field)}")
     
     return changes
 
 def main():
-    log_message("Instagram Tracker started")
+    logging.info("Starting Instagram Tracker")
     
-    previous_data = load_previous_data()
     cl = initialize_client()
-    
     if not cl:
         return
     
     try:
-        while True:
-            current_data = get_user_data(cl, CONFIG['target_username'])
-            
-            if current_data:
-                changes = compare_data(previous_data, current_data)
-                
-                if changes:
-                    log_message(f"Changes detected for {CONFIG['target_username']}:")
-                    for change in changes:
-                        log_message(f"- {change}")
-                    
-                    # Save the current state
-                    save_current_data(current_data)
-                    previous_data = current_data
-                else:
-                    log_message(f"No changes detected for {CONFIG['target_username']}")
-            
-            time.sleep(CONFIG['check_interval'])
-    
-    except KeyboardInterrupt:
-        log_message("Tracker stopped by user")
+        previous_data = load_previous_data()
+        current_data = get_user_data(cl, TARGET_USERNAME)
+        
+        if current_data:
+            changes = compare_data(previous_data, current_data)
+            if changes:
+                logging.info("Changes detected:")
+                for change in changes:
+                    logging.info(change)
+                save_current_data(current_data)
+            else:
+                logging.info("No changes detected")
     except Exception as e:
-        log_message(f"Tracker stopped due to error: {str(e)}")
+        logging.error(f"Fatal error: {e}")
     finally:
-        cl.logout()
+        logging.info("Script completed")
 
 if __name__ == "__main__":
     main()
