@@ -1,14 +1,12 @@
-from flask_cors import CORS
-
-app = Flask(__name__)
-CORS(app)
-# app.py
 from flask import Flask, request
 import pandas as pd
 import requests
 import os
 
+from flask_cors import CORS
+
 app = Flask(__name__)
+CORS(app)
 
 BOT_TOKEN = "7813940268:AAHTnEJq9dBObZPxZ7K4qR18QgdQxbyfgl4"
 CHAT_ID = "8110106197"
