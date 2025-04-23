@@ -1,3 +1,5 @@
 Flask
 pandas
 requests
+flask-cors
+python-telegram-bot==13.15
